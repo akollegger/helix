@@ -124,7 +124,7 @@ CALL {
 RETURN chapterNumber, chapterTitle, chapterTitleGroups
 ;
 // CREATE book and chapter nodes, return book and first chapter
-WITH "file://alice.json" as blog_url
+WITH "https://raw.githubusercontent.com/akollegger/helix/main/neo4j/import/alice.json" as blog_url
 CALL apoc.load.json(blog_url) YIELD value
 MERGE (book:Book { title: value.metadata.title, author: value.metadata.author })
 WITH book, value.content as bookContent
