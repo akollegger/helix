@@ -9,3 +9,4 @@ venv
 *.tar
 dist
 api/runs
+neo4j/data

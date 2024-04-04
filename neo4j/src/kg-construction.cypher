@@ -23,67 +23,57 @@
   *     summaryEmbeddings: list<float> // vector embedding of summary **NOTE: not yet implemented! **
   * })
   *
+  * (:Chapter => {
+  *    number :: string!,  // a unique identifier for the chunk
+  *    text :: string!,     // the text of the chunk 
+  *    textEmbedding :: list<float> // vector embedding of the text
+  * })
+
   * (:Chunk => {
-  *    chunkId :: string!,  // a unique identifier for the chunk
+  *    uuid :: string!,     // a unique identifier for the chunk. 
   *    text :: string!,     // the text of the chunk 
   *    textEmbedding :: list<float> // vector embedding of the text
   * })
   * 
-  * (:Form)=[:SECTION => { item :: string }]=>(:Chunk)
+  * (:Book)=[:CHAPTER]=>(:Chapter)
+  *
+  * (:Chapter)=[:BEGINNING]=>(:Chunk)
   *
   * // @kind peer
   * // @antonym previous
   * (:Chunk)=[:NEXT^1]=>(:Chunk)
   *
   * // @kind membership
-  * (:Chunk)=[:PART_OF^1]->(:Form)
+  * (:Chunk)=[:PART_OF^1]->(:Chapter)
   *
-  * (:Company => {
-  *     cusip6:: string!,       // the CUSIP6 identifier for the company
-  *     name :: string!,        // the name of the company
-  *     names :: list<string>,  // list of alternative names for the company
-  *     cusip:: list<string>,   // list of known CUSIP identifiers for the company
-  *     address :: string       // the address of the company **NOTE: not yet implemented! **
-  * })
   *
-  * (:Manager {
-  *     cik :: int!, // the Central Index Key for the manager
-  *     name :: string, // the name of the manager
-  *     address :: string // the address of the manager
-  * })
-  * 
-  * (:Manager)=[:OWNS_STOCK_IN]=>(:Company)
-  * (:Company)=[:FILED]=>(:Form)
-  * ```
-  *
-  * @module LoadEdgarKG
-  * @plugins apoc, genai
+  * @module LoadAliceKG
+  * @plugins apoc, gds, genai
   * @param openAiApiKey::string - OpenAI API key
   * @param baseURL::string - Base URL for the data files
   */
-MERGE (kg:KnowledgeGraph {name: "Books"})
-MERGE (kgop:KnowledgeGraphOperation {name: "Construction", source:"kg-construction.cypher"})
-  ON MATCH SET kgop.lastRun = datetime()
-MERGE (kgop)-[:APPLIED_TO]->(kg)
-RETURN kg.name + "-" + kgop.name as as name // first statement in a module must RETURN module name
+MERGE (kg:KnowledgeGraph {name: "Alice"})
+RETURN kg.name as name // first statement in a module must RETURN module name
 ;
 
 ////////////////////////////////////////////////
 // Load a book, split it up into chapters
 ;
-
-// create a book node with title and author, return book with array of chapters
-WITH "file://alice.json" as blog_url
-CALL apoc.load.json(blog_url) YIELD value
+// set the query parameter `$blog_url` to the URL of the book JSON file.
+// This is a client-side command. To do the same from a driver, pass in the query parameter
+// when executing the cypher.
+:params blog_url => "https://raw.githubusercontent.com/akollegger/helix/main/neo4j/import/alice.json"
+;
+// CREATE: create a book node with title and author, return book with array of chapters
+CALL apoc.load.json($blog_url) YIELD value
 MERGE (book:Book { title: value.metadata.title, author: value.metadata.author })
 WITH book, value.content as bookContent
 WITH book, bookContent,  apoc.text.split(bookContent, "CHAPTER") as splitChapters
 WITH book, bookContent, splitChapters[0] + [chapter in splitChapters[1..] | "CHAPTER " + chapter] as chapters
 RETURN book, chapters
 ;
-// return chapter titles using a subquery per chapter, extracting with a regex
-WITH "file://alice.json" as blog_url
-CALL apoc.load.json(blog_url) YIELD value
+// INSPECT: return chapter titles using a subquery per chapter, extracting with a regex
+CALL apoc.load.json($blog_url) YIELD value
 MERGE (book:Book { title: value.metadata.title, author: value.metadata.author })
 WITH book, value.content as bookContent
 WITH book, bookContent,  apoc.text.split(bookContent, "CHAPTER") as splitChapters
@@ -99,9 +89,8 @@ CALL {
 }
 RETURN book, chapterTitle
 ;
-// return chapter numbers and titles, using an expanded regex
-WITH "file://alice.json" as blog_url
-CALL apoc.load.json(blog_url) YIELD value
+// INSPECT: return chapter numbers and titles, using an expanded regex
+CALL apoc.load.json($blog_url) YIELD value
 MERGE (book:Book { title: value.metadata.title, author: value.metadata.author })
 WITH book, value.content as bookContent
 WITH book, bookContent,  apoc.text.split(bookContent, "CHAPTER") as splitChapters
@@ -123,9 +112,8 @@ CALL {
 }
 RETURN chapterNumber, chapterTitle, chapterTitleGroups
 ;
-// CREATE book and chapter nodes, return book and first chapter
-WITH "https://raw.githubusercontent.com/akollegger/helix/main/neo4j/import/alice.json" as blog_url
-CALL apoc.load.json(blog_url) YIELD value
+// CREATE: book and chapter nodes, return book and first chapter
+CALL apoc.load.json($blog_url) YIELD value
 MERGE (book:Book { title: value.metadata.title, author: value.metadata.author })
 WITH book, value.content as bookContent
 WITH book, bookContent,  apoc.text.split(bookContent, "CHAPTER") as splitChapters
@@ -151,7 +139,7 @@ CALL {
 }
 MATCH p=(:Book)-->(:Chapter) RETURN p
 ;
-// Splt the chapter text into chunks of 1000 words
+// CREATE: Split the chapter text into chunks of 1000 words
 MATCH (b:Book)-[s:CHAPTER]->(c:Chapter)
 WITH b, s, c, apoc.text.split(c.text, "\s+") as tokens
 CALL apoc.coll.partition(tokens, 1000) YIELD value
